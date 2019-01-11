@@ -86,7 +86,16 @@ public class ImportProfileData extends ConsoleRunnable {
             } else if (geneticProfile.getGeneticAlterationType() == GeneticAlterationType.FUSION) {
                 ImportFusionData importer = new ImportFusionData(dataFile, geneticProfile.getGeneticProfileId(), genePanel);
                 importer.importData();
-            } else {
+            }
+            else if (geneticProfile.getGeneticAlterationType() == GeneticAlterationType.MUTATIONAL_SIGNATURE_EXPOSURE){
+                ImportTabDelimData importer = new ImportTabDelimData(dataFile, geneticProfile.getGeneticProfileId(), genePanel);
+                importer.importData(numLines);
+            }
+            else if (geneticProfile.getGeneticAlterationType() == GeneticAlterationType.MUTATIONAL_SIGNATURE_CONFIDENCE){
+                ImportTabDelimData importer = new ImportTabDelimData(dataFile, geneticProfile.getGeneticProfileId(), genePanel);
+                importer.importData(numLines);
+            }
+            else {
                 ImportTabDelimData importer = new ImportTabDelimData(dataFile, geneticProfile.getTargetLine(), geneticProfile.getGeneticProfileId(), genePanel);
                 importer.importData(numLines);
             }

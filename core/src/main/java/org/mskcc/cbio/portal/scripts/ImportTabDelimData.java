@@ -119,7 +119,8 @@ public class ImportTabDelimData {
         boolean gsvaProfile = geneticProfile!=null
                                 && geneticProfile.getGeneticAlterationType() == GeneticAlterationType.GENESET_SCORE
                                 && parts[0].equalsIgnoreCase("geneset_id");
-        
+        boolean mutationalSignatureProfile = (geneticProfile.getGeneticAlterationType() == GeneticAlterationType.MUTATIONAL_SIGNATURE_EXPOSURE
+                                             || geneticProfile.getGeneticAlterationType() == GeneticAlterationType.MUTATIONAL_SIGNATURE_CONFIDENCE);
         int numRecordsToAdd = 0;
         int samplesSkipped = 0;
         try {
@@ -127,23 +128,34 @@ public class ImportTabDelimData {
 	        int entrezGeneIdIndex = getEntrezGeneIdIndex(parts);
 	        int rppaGeneRefIndex = getRppaGeneRefIndex(parts);
 	        int genesetIdIndex = getGenesetIdIndex(parts);
+	        int mutationalSignatureIdIndex = 1; //first column is for headers. Headers are samples
 	        int sampleStartIndex = getStartIndex(parts, hugoSymbolIndex, entrezGeneIdIndex, rppaGeneRefIndex, genesetIdIndex);
 	        if (rppaProfile) {
-	        	if (rppaGeneRefIndex == -1) {
-	        		throw new RuntimeException("Error: the following column should be present for RPPA data: Composite.Element.Ref");
-				}
+	            if (rppaGeneRefIndex == -1) {
+	                throw new RuntimeException("Error: the following column should be present for RPPA data: Composite.Element.Ref"); 
+	            } 
 	        } else if (gsvaProfile) {
-	        	if (genesetIdIndex == -1) {
-	        		throw new RuntimeException("Error: the following column should be present for gene set score data: geneset_id");
-	        	}
-	        } else if (hugoSymbolIndex == -1 && entrezGeneIdIndex == -1) {
-				throw new RuntimeException("Error: at least one of the following columns should be present: Hugo_Symbol or Entrez_Gene_Id");
+	            if (genesetIdIndex == -1) {
+                        throw new RuntimeException("Error: the following column should be present for gene set score data: geneset_id"); 
+	            } 
 	        }
-	        
+	        else if (mutationalSignatureProfile){
+	            if (mutationalSignatureIdIndex != 1){
+                    throw new RuntimeException("Error: the data in the mutational signature file should start in column 2");
+                }
+	        } 
+	        else if (hugoSymbolIndex == -1 && entrezGeneIdIndex == -1) {
+                    throw new RuntimeException("Error: at least one of the following columns should be present: Hugo_Symbol or Entrez_Gene_Id"); 
+	        }
 	        
 	        String sampleIds[];
 	        sampleIds = new String[parts.length - sampleStartIndex];
 	        System.arraycopy(parts, sampleStartIndex, sampleIds, 0, parts.length - sampleStartIndex);
+	        
+	        if(mutationalSignatureProfile){
+	            sampleIds = new String[parts.length - mutationalSignatureIdIndex];
+	            System.arraycopy(parts, mutationalSignatureIdIndex, sampleIds, 0, parts.length - mutationalSignatureIdIndex);
+            }
 
 	        int nrUnknownSamplesAdded = 0;
 	        ProgressMonitor.setCurrentMessage(" --> total number of samples: " + sampleIds.length);	        
@@ -215,6 +227,9 @@ public class ImportTabDelimData {
                 if (gsvaProfile) {
                     recordAdded = parseGenesetLine(line, lenParts, sampleStartIndex, genesetIdIndex, 
                             filteredSampleIndices, daoGeneticAlteration);
+                }
+                else if (mutationalSignatureProfile){
+                    recordAdded = parseMutationalSignatureLine(line, lenParts, mutationalSignatureIdIndex, daoGeneticAlteration);
                 }
                 else {
                     recordAdded = parseLine(line, lenParts, sampleStartIndex, 
@@ -504,6 +519,50 @@ public class ImportTabDelimData {
         return storedRecord;
     }
 
+    private boolean parseMutationalSignatureLine(String line, int nrColumns, int mutationalSignatureIdIndex,
+                                                 DaoGeneticAlteration daoGeneticAlteration) throws DaoException{
+        boolean storedRecord = false;
+        
+        if(line.startsWith("exposure") || line.startsWith("confidence")){
+            String[] parts = line.split("\t");
+
+            if (parts.length>nrColumns) {
+                if (line.split("\t").length>nrColumns) {
+                    ProgressMonitor.logWarning("Ignoring line with more fields (" + parts.length
+                        + ") than specified in the headers(" + nrColumns + "): \n"+parts[0]);
+                    return false;
+                }
+            }
+
+            String values[] = (String[]) ArrayUtils.subarray(parts, mutationalSignatureIdIndex, parts.length>nrColumns?nrColumns:parts.length);
+            MutationalSignatureMeta mutationalSignatureMeta;
+            if (line.startsWith("exposure")){
+                //truncates "exposure_" and adds number to "mutational_signature_"
+                mutationalSignatureMeta = DaoMutationalSignature.getMutationalSignatureById("mutational_signature_" + parts[mutationalSignatureIdIndex].substring(9));
+            }
+            else{
+                //truncates "confidence_"
+                mutationalSignatureMeta = DaoMutationalSignature.getMutationalSignatureById("mutational_signature_" + parts[mutationalSignatureIdIndex].substring(11));
+            }
+            
+            //check if mutational signature metadata exists in the database
+            if (mutationalSignatureMeta !=  null) {
+                storedRecord = storeGeneticEntityGeneticAlterations(values, daoGeneticAlteration, mutationalSignatureMeta.getGeneticEntityId(),
+                    DaoGeneticEntity.EntityTypes.MUTATIONAL_SIGNATURE, mutationalSignatureMeta.getMutationalSignatureId());
+            }
+            else {
+                if (line.startsWith("exposure")){
+                    ProgressMonitor.logWarning("Mutational Signature " + parts[mutationalSignatureIdIndex].substring(9) + " not found in DB. Record will be skipped.");
+                }
+                else{
+                    ProgressMonitor.logWarning("Mutational Signature " + parts[mutationalSignatureIdIndex].substring(11) + " not found in DB. Record will be skipped.");
+                }
+            }
+        }
+        
+        return storedRecord;
+    }
+
 	private boolean storeGeneticAlterations(String[] values, DaoGeneticAlteration daoGeneticAlteration,
             CanonicalGene gene, String geneSymbol) throws DaoException {
 		//  Check that we have not already imported information regarding this gene.
@@ -535,7 +594,7 @@ public class ImportTabDelimData {
      * @param values
      * @param daoGeneticAlteration
      * @param geneticEntityId - internal id for genetic entity
-     * @param geneticEntityType - "GENE", "GENESET", "PHOSPHOPROTEIN"
+     * @param geneticEntityType - "GENE", "GENESET", "PHOSPHOPROTEIN", "MUTATIONAL_SIGNATURE"
      * @param geneticEntityName - hugo symbol for "GENE", external id for "GENESET", phospho gene name for "PHOSPHOPROTEIN"
      * @return boolean indicating if record was stored successfully or not
      */

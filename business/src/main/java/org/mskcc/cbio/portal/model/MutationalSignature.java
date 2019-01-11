@@ -1,7 +1,6 @@
 package org.mskcc.cbio.portal.model;
 
 import java.io.Serializable;
-import java.util.Map;
 
 public class MutationalSignature implements Serializable {
 	private String sample;

@@ -22,7 +22,9 @@ public class MolecularProfile implements Serializable {
         PROTEIN_LEVEL,
         PROTEIN_ARRAY_PROTEIN_LEVEL,
         PROTEIN_ARRAY_PHOSPHORYLATION,
-        GENESET_SCORE
+        GENESET_SCORE,
+        MUTATIONAL_SIGNATURE_EXPOSURE,
+        MUTATIONAL_SIGNATURE_CONFIDENCE
     }
 
     private Integer molecularProfileId;
